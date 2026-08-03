@@ -1,0 +1,39 @@
+name: Publish release
+
+# Manually triggered — fetches an already-built, already-tested exe from its
+# Azure Blob staging URL and attaches it to a new GitHub Release. Runs as the
+# repo's own github-actions[bot] token, not a personal account, so no human
+# identity is ever attributed as the release author. See README.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, e.g. v0.2.0-beta"
+        required: true
+      blob_url:
+        description: "Public Azure Blob URL of the built exe"
+        required: true
+      notes:
+        description: "Release notes"
+        required: true
+        default: "ClearHarbor Desktop for Windows (self-contained, unsigned — Windows SmartScreen will show a warning on first run)."
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download exe from Azure Blob staging
+        run: curl -fL "${{ inputs.blob_url }}" -o SafeHarborLocal.exe
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ inputs.version }}" SafeHarborLocal.exe \
+            --repo "${{ github.repository }}" \
+            --title "${{ inputs.version }}" \
+            --notes "${{ inputs.notes }}"
