@@ -1,23 +1,30 @@
 name: Publish release
 
-# Manually triggered — fetches an already-built, already-tested exe from its
-# Azure Blob staging URL and attaches it to a new GitHub Release. Runs as the
-# repo's own github-actions[bot] token, not a personal account, so no human
-# identity is ever attributed as the release author. See README.md.
+# Manually triggered — fetches an already-built, already-tested release asset from its Azure
+# Blob staging URL and attaches it to a new GitHub Release. Runs as the repo's own
+# github-actions[bot] token, not a personal account, so no human identity is ever attributed as
+# the release author. See README.md.
+#
+# Downloads whatever file the blob URL points to, under its own name (previously hardcoded to
+# SafeHarborLocal.exe, back when the download was one bare exe). As of the consent-gate
+# installer, the download is a zip containing the consent-gate exe alongside the real
+# Setup.exe — the consent-gate exe finds its Setup.exe by scanning its own directory, so both
+# files must ship side by side, not as two separate release assets a user could mismatch or
+# grab only one of.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag, e.g. v0.2.0-beta"
+        description: "Release tag, e.g. v0.3.0-beta"
         required: true
       blob_url:
-        description: "Public Azure Blob URL of the built exe"
+        description: "Public Azure Blob URL of the built release asset (e.g. a .zip)"
         required: true
       notes:
         description: "Release notes"
         required: true
-        default: "ClearHarbor Desktop for Windows (self-contained, unsigned — Windows SmartScreen will show a warning on first run)."
+        default: "ClearHarbor Desktop for Windows (self-contained, unsigned — Windows SmartScreen will show a warning on first run). Extract the zip and run ClearHarborInstallerConsent.exe."
 
 permissions:
   contents: write
@@ -26,14 +33,17 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Download exe from Azure Blob staging
-        run: curl -fL "${{ inputs.blob_url }}" -o SafeHarborLocal.exe
+      - name: Download release asset from Azure Blob staging
+        run: |
+          filename="$(basename "${{ inputs.blob_url }}")"
+          curl -fL "${{ inputs.blob_url }}" -o "$filename"
+          echo "ASSET_PATH=$filename" >> "$GITHUB_ENV"
 
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ inputs.version }}" SafeHarborLocal.exe \
+          gh release create "${{ inputs.version }}" "$ASSET_PATH" \
             --repo "${{ github.repository }}" \
             --title "${{ inputs.version }}" \
             --notes "${{ inputs.notes }}"
