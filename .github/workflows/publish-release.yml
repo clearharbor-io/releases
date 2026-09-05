@@ -1,16 +1,17 @@
 name: Publish release
 
-# Manually triggered — fetches an already-built, already-tested release asset from its Azure
-# Blob staging URL and attaches it to a new GitHub Release. Runs as the repo's own
+# Manually triggered — fetches already-built, already-tested release asset(s) from their
+# Azure Blob staging URL(s) and attaches them to a new GitHub Release. Runs as the repo's own
 # github-actions[bot] token, not a personal account, so no human identity is ever attributed as
 # the release author. See README.md.
 #
-# Downloads whatever file the blob URL points to, under its own name (previously hardcoded to
-# SafeHarborLocal.exe, back when the download was one bare exe). As of the consent-gate
-# installer, the download is a zip containing the consent-gate exe alongside the real
-# Setup.exe — the consent-gate exe finds its Setup.exe by scanning its own directory, so both
-# files must ship side by side, not as two separate release assets a user could mismatch or
-# grab only one of.
+# Downloads whatever file blob_url points to, under its own name. The public download is a
+# single self-contained ClearHarborSetup.exe (the consent-gate exe with Velopack's Setup.exe
+# embedded inside it) — ner_model_blob_url is a separate, optional second asset: the on-demand
+# GLiNER NER model bundle (a zip), attached to the SAME release/tag as ClearHarborSetup.exe
+# since the installer downloads it by constructing a URL from its own version at install time
+# (see installer/HippaStrippa.InstallerConsent/InstallerModelPayload.cs in the main repo). Not
+# every release needs it — omit ner_model_blob_url when a build didn't produce one.
 
 on:
   workflow_dispatch:
@@ -21,6 +22,9 @@ on:
       blob_url:
         description: "Public Azure Blob URL of the built release asset (e.g. a .zip)"
         required: true
+      ner_model_blob_url:
+        description: "Public Azure Blob URL of the NER model zip (optional — omit if this build has none)"
+        required: false
       notes:
         description: "Release notes"
         required: true
@@ -47,3 +51,18 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "${{ inputs.version }}" \
             --notes "${{ inputs.notes }}"
+
+      - name: Download NER model asset (optional)
+        if: inputs.ner_model_blob_url != ''
+        run: |
+          filename="$(basename "${{ inputs.ner_model_blob_url }}")"
+          curl -fL "${{ inputs.ner_model_blob_url }}" -o "$filename"
+          echo "NER_ASSET_PATH=$filename" >> "$GITHUB_ENV"
+
+      - name: Upload NER model asset to release (optional)
+        if: inputs.ner_model_blob_url != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.version }}" "$NER_ASSET_PATH" \
+            --repo "${{ github.repository }}"
